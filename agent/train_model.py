@@ -24,7 +24,7 @@ def get_task():
 if __name__ == '__main__':
     learning_rate = 0.001
 
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = carRNN().to(device)
     history = []
     optimizer = optim.Adam(model.parameters(),learning_rate)
@@ -37,10 +37,9 @@ if __name__ == '__main__':
     while True:
         look_ahead= 2
         next_state, reward, done, info = env.step(4)
-        if not done:
-            history.append([torch.tensor(next_state[0]).to(device).type(torch.float32),
-                            torch.tensor(next_state[-1]).to(device).type(torch.float32)])
-        else:
+        history.append([torch.tensor(next_state[0]).to(device).type(torch.float32),
+                        torch.tensor(next_state[-1]).to(device).type(torch.float32)])
+        if done:
             losses = []
             hidden = model.initHidden()
             for i in range(len(history)-look_ahead):
@@ -59,14 +58,14 @@ if __name__ == '__main__':
             if len(losses) > 0:
                 optimizer.zero_grad()
                 loss = sum(losses) / len(losses)
-                loss.backward(retain_graph=True)
+                loss.backward()
                 optimizer.step()
                 count +=1
 
             if count%print_interval ==0:
                 print(loss)
             if count%(print_interval*2)==0:
-                torch.save(model.state_dict(), 'modelfile2_lookahead')
+                torch.save(model.state_dict(), 'modelfile2_lookrqwerweahead')
 
             state = env.reset()
             history = [[torch.tensor(state[0]).to(device).type(torch.float32),
