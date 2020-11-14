@@ -6,6 +6,9 @@ import random
 import numpy as np
 import time
 import torch
+import os
+import torch.autograd as autograd
+import torch.nn as nn
 '''
 An example to import a Python file.
 
@@ -14,11 +17,28 @@ Uncomment the following lines (both try-except statements) to import everything 
 # try: # server-compatible import statement
 #     from models import *
 # except: pass
-try: # local-compatible import statement
-     from models import *
-except:
-    print('failed')
+
+script_path = os.path.dirname(os.path.realpath(__file__))
+model1 = os.path.join(script_path, 'modelfile2')
+model2 = os.path.join(script_path, 'modelfile2_lookahead')
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+class carRNN(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.readout = nn.Linear(100,50)
+        self.rnn = nn.RNN(100, 100, 1,nonlinearity='relu')
+
+    def forward(self, input,hidden):
+        output, hidden = self.rnn(input,hidden)
+        output = self.readout(output)
+        output = torch.sigmoid(output)
+
+        return (output, hidden)
+
+    def initHidden(self):
+        return torch.zeros(1,10, 100).to(device)
 
 class ExampleAgent(Agent):
     '''
@@ -36,8 +56,8 @@ class ExampleAgent(Agent):
         test_case_id = kwargs.get('test_case_id')
         self.model = carRNN().to(device)
         self.model_look_ahead = carRNN().to(device)
-        self.model_look_ahead.load_state_dict(torch.load('modelfile2_lookahead'))
-        self.model.load_state_dict(torch.load('modelfile2'))
+        self.model_look_ahead.load_state_dict(torch.load(model2))
+        self.model.load_state_dict(torch.load(model1))
         self.hidden_state = self.model.initHidden()
         self.hidden_state_look = self.model_look_ahead.initHidden()
         self.t_max = kwargs.get('t_max')
@@ -198,8 +218,10 @@ class ExampleAgent(Agent):
         # 1-ratio/original 0 -> 1)
         # as (1-ratio/original) ratio goes up, we need to take 0 with higher probability
         factor = 0.075
-        risk = min(0.95 - factor * (1 - ratio / original_ratio), 0.95)
-
+        start_prob = 0.95 if self.t_max == 50 else 0.94
+        risk = min(start_prob - factor * (1 - ratio / original_ratio), start_prob)
+        scale  = 0.98 * 0.98 if self.t_max >= 50 else 0.94 * 0.97
+        delay = 0
         if prob[0] >= risk:
             assert actions[0] == 0
             return actions[0]
@@ -209,17 +231,19 @@ class ExampleAgent(Agent):
             for i in actions:
                 if i == 0:
                     continue
-                if prob[i] >= 0.98*0.97:
+                if prob[i] >= scale + delay:
                     return i
-                elif prob[i] > best_prob:
+                elif prob[i] - delay > best_prob:
                     best_action = i
                     best_prob = prob[i]
-
+                delay += 0.01
             if ratio > original_ratio:
                 return best_action
             else:
                 return 4
-
+        #0 is scale * risk
+        #1 ius 0.97 * scale
+        #2 is 1 + return 4
         '''
 
         '''
@@ -326,6 +350,8 @@ if __name__ == '__main__':
 
     def get_task():
         tcs = [('t2_tmax50', 50), ('t2_tmax40', 40)]
+        #tcs = [('t2_tmax40', 40)]
+
         return {
             'time_limit': 600,
             'testcases': [{ 'id': tc, 'env': construct_random_lane_env(), 'runs': 300, 't_max': t_max } for tc, t_max in tcs]
